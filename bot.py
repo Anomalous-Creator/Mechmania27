@@ -350,13 +350,15 @@ def get_action_decision(game: Game) -> ActionDecision:
     logger.debug(f"Possible harvest locations={possible_harvest_locations}")
     logger.debug(f"Possible plant locations={possible_plant_locations}")
     if my_player.money >= CropType.DUCHAM_FRUIT.get_seed_price() and game_state.tile_map.get_tile(pos.x,pos.y).type == TileType.GREEN_GROCER\
-            and my_player.money < 2500:
+            and game_state.turn < 150:
         if my_player.money >= CropType.GOLDEN_CORN.get_seed_price():
             decision = BuyDecision([CropType.GOLDEN_CORN],
-                               [min(int(my_player.money / CropType.GOLDEN_CORN.get_seed_price()), len(my_player.seed_inventory))])
+                               [min(int(my_player.money /
+                                   CropType.GOLDEN_CORN.get_seed_price()), 5)])
         elif sum(my_player.seed_inventory.values()) < 5:
             decision = BuyDecision([CropType.DUCHAM_FRUIT],
-                               [min(int(my_player.money / CropType.DUCHAM_FRUIT.get_seed_price()), len(my_player.seed_inventory))])
+                               [min(int(my_player.money /
+                                   CropType.DUCHAM_FRUIT.get_seed_price()), 5)])
         else:
             decision = DoNothingDecision()
     # If we can harvest something, try to harvest it

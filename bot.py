@@ -17,12 +17,15 @@ from model.player import Player
 from api.constants import Constants
 
 import random
+import math
 
 # "Get" global logger and constant
 logger = Logger()
 constants = Constants()
 
 # Global Variables
+# Turn we planted
+turn_planted = -1
 # Global list of crops we or the opposition have planted at the y,x value
 # Both lists are a 50 x 30
 # They will be filled with "None" crops at the start of the game
@@ -32,7 +35,17 @@ constants = Constants()
 friendly_crops = [[]]
 opposition_crops = [[]]
 
-#Check if two crop objects are equal by checking their type, growth_timer, and value
+
+def on_better_soil(player, game_state):
+    return game_state.tile_map.get_tile(player.pos.x, player.pos.y) >= 5
+
+
+# Get the x value for the line of ideal crop growth
+def get_ideal_y(game_state):
+    return math.floor(game_state.turn / 3) - 5
+
+
+# Check if two crop objects are equal by checking their type, growth_timer, and value
 def crop_equals(one, two):
     if not one.type == two.type:
         return False
@@ -40,18 +53,19 @@ def crop_equals(one, two):
         return False
     if not one.value == two.value:
         return False
-    #If made it this far, all variables must be equal so return true
+    # If made it this far, all variables must be equal so return true
     return True
 
-#Populate the two global crop lists at the beginning of the game
-#All crops at the beginning will have crop.type == 9 (the value for no crop type)
+
+# Populate the two global crop lists at the beginning of the game
+# All crops at the beginning will have crop.type == 9 (the value for no crop type)
 def populate_global_crop_lists(game_state):
     # Iterate through all tiles
     for x in range(game_state.tile_map.map_width):
         for y in range(game_state.tile_map.map_height):
-            # Populate the crop lists with the intial crops
-            friendly_crops[y][x] = game_state.tile_map.get_tile(y, x).crop
-            opposition_crops[y][x] = game_state.tile_map.get_tile(y, x).crop
+            # Populate the crop lists with the initial crops
+            friendly_crops[y][x] = game_state.tile_map.get_tile(x, y).crop
+            opposition_crops[y][x] = game_state.tile_map.get_tile(x, y).crop
 
 
 # Check for and update opponent crop list
@@ -61,26 +75,25 @@ def check_for_opp_crops(game_state):
     for x in range(game_state.tile_map.map_width):
         for y in range(game_state.tile_map.map_height):
             # Check that the crop is not one of ours
-            if not (friendly_crops[y][x].type == game_state.tile_map.get_tile(y, x).crop.type):
+            if not (friendly_crops[y][x].type == game_state.tile_map.get_tile(x, y).crop.type):
                 # Check that the crop is not already updated
-                if not (opposition_crops[y][x].type == game_state.tile_map.get_tile(y, x).crop.type):
-                    opposition_crops[y][x] = game_state.tile_map.get_tile(y, x).crop
+                if not (opposition_crops[y][x].type == game_state.tile_map.get_tile(x, y).crop.type):
+                    opposition_crops[y][x] = game_state.tile_map.get_tile(x, y).crop
 
 
-#Update the global crop lists with crop growth
+# Update the global crop lists with crop growth
 def update_global_tile_lists(game_state):
     for x in range(game_state.tile_map.map_width):
         for y in range(game_state.tile_map.map_height):
-            #Check to update the friendly crop
+            # Check to update the friendly crop
             if not friendly_crops[y][x].type == 9:
-                if not crop_equals(friendly_crops[y][x], game_state.tile_map.get_tile(y, x).crop):
-                    friendly_crops[y][x] = game_state.tile_map.get_tile(y, x).crop
+                if not crop_equals(friendly_crops[y][x], game_state.tile_map.get_tile(x, y).crop):
+                    friendly_crops[y][x] = game_state.tile_map.get_tile(x, y).crop
 
-            #Check to update the opposition crop
+            # Check to update the opposition crop
             if not opposition_crops[y][x].type == 9:
-                if not crop_equals(opposition_crops[y][x], game_state.tile_map.get_tile(y, x).crop):
-                    opposition_crops[y][x] = game_state.tile_map.get_tile(y, x).crop
-
+                if not crop_equals(opposition_crops[y][x], game_state.tile_map.get_tile(x, y).crop):
+                    opposition_crops[y][x] = game_state.tile_map.get_tile(x, y).crop
 
 
 def get_tiles_by_crop(game_state, tiles, crops=[]):
@@ -88,7 +101,7 @@ def get_tiles_by_crop(game_state, tiles, crops=[]):
     for x in range(game_state.tile_map.map_width):
         for y in range(game_state.tile_map.map_height):
             if tiles[y][x].crop.type in crops:
-                out_tiles[y][x] = tiles[y, x] \
+                out_tiles[y][x] = tiles[y][x] \
                     if game_state.tile_map.get_tile(x, y).crop.type \
                        in crops else None
     return out_tiles
@@ -99,11 +112,11 @@ def get_tiles_with_effects(game_state, tiles, effects=[]):
     for x in range(game_state.tile_map.map_width):
         for y in range(game_state.tile_map.map_height):
             tile_effects = []
-            if tiles[y][x].rain_totem_effect is True:
+            if tiles[y][x].rain_totem_effect:
                 effects.append('rain_totem')
-            if tiles[y][x].fertility_idol_effect is True:
+            if tiles[y][x].fertility_idol_effect:
                 effects.append('fertility_idol')
-            if tiles[y][x].rain_totem_effect is True:
+            if tiles[y][x].scarecrow_totem_effect:
                 effects.append('scarecrow')
             for effect in effects:
                 out_tiles[y][x] = tiles[y][x] if effect in tile_effects else \
@@ -118,13 +131,12 @@ def sort_tiles_by_time(game_state, tiles):
         for y in range(game_state.tile_map.map_height):
             crops[(y, x)] = {'tile': tiles[y][x], 'time':
                 tiles[y][x].crop.growth_timer}
-    crops_time = sorted(crops.iteritems(), key=lambda x_y: x_y[1]['time'])
+    crops_time = sorted(crops.items(), key=lambda x_y: x_y[1]['time'])
     return crops_time
 
 
 # Determine optimal position to move to in 3 turns
-def sort_tiles_by_harvest_value(game, player_pos_y, player_pos_x):
-    out_tiles = [[]]
+def sort_tiles_by_harvest_value(game, player_pos_x, player_pos_y):
     crops = {}
     game_state = game.get_game_state()
     tiles = game_state.tile_map
@@ -139,41 +151,97 @@ def sort_tiles_by_harvest_value(game, player_pos_y, player_pos_x):
             else:
                 pass
 
-            if tiles.get_tile[y][x].scarecrowEffect == True or near_opp or tiles.get_tile[y][x].crop.growth_timer > 0:
+            if tiles[y][x].hasScarecrowEffect == True or near_opp or tiles[y][x].crop.growth_timer > 0:
                 val = 0
             else:
-                val = tiles.get_tile[y][x].crop.value
-                if is_valid_movement_pos(Player.max_movement, player_pos_y, player_pos_x, y, x):
+                val = tiles[y][x].crop.value
+                if is_valid_harvest_pos(Player.harvest_radius, Player.max_movement, player_pos_x, player_pos_y, (x, y)):
                     pass
                 else:
                     val *= 0.5
-                if tiles.get_tile[y][x].fertility_idol_effect:
+                if tiles[y][x].fertility_idol_effect:
                     val *= 2
                 else:
                     pass
-                crops[(y, x)] = {'tile': tiles.get_tile[y][x], 'value': val}
+                crops[(y, x)] = {'tile': tiles[y][x], 'value': val}
 
-            crops_value = sorted(crops.iteritems(), key=lambda n: n[1]['value'],reverse=True)
+            crops_value = sorted(crops.items(), key=lambda n: n[1]['value'], reverse=True)
             return crops_value
 
-def distance_to(player_pos_y, player_pos_x, pos_move=(0, 0)):
-    true_pos = str((player_pos_x + player_pos_y) - (pos_move[0] + pos_move[1]))
-    if true_pos.contains("-"):
-        true_pos.strip("-")
-    return int(true_pos)
 
-
-#Determine if the pos you want to move to from player pos is valid
-def is_valid_movement_pos(max_movement, player_pos_y, player_pos_x, pos_move=(0, 0)):
+# Determine if the pos you want to move to from player pos is valid
+def is_valid_movement_pos(max_movement, player_pos_y, player_pos_x, pos_move=[0, 0]):
     true_pos = distance_to(player_pos_y, player_pos_x, pos_move)
     if true_pos <= max_movement:
         return True
     else:
         return False
 
-def is_valid_harvest_pos(harvest_rad,max_movement, player_pos_y, player_pos_x, pos_move=(0, 0)):
-    if distance_to(player_pos_y, player_pos_x, pos_move)<max_movement:
-    elif pos_move[0]
+
+def distance_to(player_pos_x, player_pos_y, pos_move=[0, 0]):
+    true_pos = abs((player_pos_x + player_pos_y) - (pos_move[0] + pos_move[1]))
+    return true_pos
+
+
+# Move as close to pos_move as possible (within valid space)
+def movement_clamp(max_movement, player_pos_x, player_pos_y, pos_move=[0, 0]):
+    if is_valid_movement_pos(max_movement, player_pos_x, player_pos_y, pos_move):
+        return pos_move[0], pos_move[1]
+    elif abs(player_pos_x - pos_move[0]) < max_movement:
+        if pos_move[0] == player_pos_x:
+            if pos_move[1] > player_pos_y:
+                pos_move[1] = player_pos_y + max_movement
+            else:
+                pos_move[1] = player_pos_y - max_movement
+        elif pos_move[0] > player_pos_x:
+            pos_move[0] = player_pos_x + max_movement - abs(player_pos_y - pos_move[1])
+        else:
+            pos_move[0] = player_pos_x - (max_movement - abs(player_pos_y - pos_move[1]))
+        return pos_move[0], pos_move[1]
+    elif abs(player_pos_y - pos_move[1]) < max_movement:
+        if pos_move[1] == player_pos_y:
+            if pos_move[0] > player_pos_x:
+                pos_move[0] = player_pos_x + max_movement
+            else:
+                pos_move[0] = player_pos_x - max_movement
+        elif pos_move[1] > player_pos_y:
+            pos_move[1] = player_pos_y + max_movement - abs(player_pos_x - pos_move[0])
+        else:
+            pos_move[1] = player_pos_y - (max_movement - abs(player_pos_x - pos_move[0]))
+        return pos_move[0], pos_move[1]
+    else:
+        pos_move[0] = player_pos_x - (max_movement / 2)
+        pos_move[1] = player_pos_y - (max_movement / 2)
+        if pos_move[1] > player_pos_y:
+            pos_move[1] = player_pos_y + max_movement / 2
+
+        if pos_move[0] > player_pos_x:
+            pos_move[0] = player_pos_x + max_movement / 2
+        else:
+            pass
+        return pos_move[0], pos_move[1]
+
+
+def is_valid_harvest_pos(harvest_rad, max_movement, player_pos_x, player_pos_y, pos_move=[0, 0]):
+    if distance_to(player_pos_x, player_pos_y, pos_move) < max_movement + harvest_rad:
+        return True
+    else:
+        return False
+
+
+
+"""
+TOP SECRET CURRENT PLAN(t)
+-Do we have seeds?
+    -Move to one below ideal
+    -Plan seeds
+-Else no seeds
+    -Did we just plant seeds?
+        -Wait or harvest
+    -Else already harvested
+        -Move to sell
+    -Else buy seeds
+"""
 def get_move_decision(game: Game) -> MoveDecision:
     """
     Returns a move decision for the turn given the current game state.
@@ -188,35 +256,32 @@ def get_move_decision(game: Game) -> MoveDecision:
     :param: game The object that contains the game state and other related information
     :returns: MoveDecision A location for the bot to move to this turn
     """
+    # Get the game state from the game
     game_state: GameState = game.get_game_state()
     logger.debug(f"[Turn {game_state.turn}] Feedback received from engine: {game_state.feedback}")
+    global turn_planted
 
     # Select your decision here!
     my_player: Player = game_state.get_my_player()
     pos: Position = my_player.position
     logger.info(f"Currently at {my_player.position}")
+    turn = int(game_state.turn)
 
     # If we have something to sell that we harvested, then try to move towards the green grocer tiles
-    if random.random() < 0.5 and \
-            (sum(my_player.seed_inventory.values()) == 0 or
-             len(my_player.harvested_inventory)):
+    if turn < 23:
+        x, y = movement_clamp(my_player.max_movement, pos.x, pos.y, [15, 0])
         logger.debug("Moving towards green grocer")
-        decision = MoveDecision(Position(constants.BOARD_WIDTH // 2, max(0, pos.y - constants.MAX_MOVEMENT)))
-    # If not, then move randomly within the range of locations we can move to
+    # Move toward green grocer if we have harvest, or no seeds
+    elif (len(my_player.harvested_inventory)) > 0 or sum(my_player.seed_inventory.values()) == 0:
+        x, y = movement_clamp(my_player.max_movement, pos.x, pos.y, [15, 0])
+
+        logger.debug("Moving towards green grocer")
+    # If not, move to lower good band
+    elif turn_planted + 5 >= game_state.turn:
+        x, y = pos.x, pos.y
     else:
-        pos = random.choice(game_util.within_move_range(game_state, my_player.name))
-        logger.debug("Moving randomly")
-        decision = MoveDecision(pos)
-    # Move towards oppositions crops
-    if len(opposition_crops) > 0:
-        xPos = opposition_crops[0][0]
-        yPos = opposition_crops[0]
-        while not is_valid_movement_pos(player_pos_y= pos.y, player_pos_x= pos.x, pos_move= (xPos, yPos)):
-            xPos =
-
-
-    if (len(my_player.harvest_inventory) + 8) > my_player.carring_capacity:
-        decision = MoveDecision(Position(15, 0))
+        x, y = movement_clamp(my_player.max_movement, pos.x, pos.y, [15, get_ideal_y(game_state)+1])
+    decision = MoveDecision(Position(x, y))
 
     logger.debug(f"[Turn {game_state.turn}] Sending MoveDecision: {decision}")
     return decision
@@ -237,6 +302,7 @@ def get_action_decision(game: Game) -> ActionDecision:
     """
     game_state: GameState = game.get_game_state()
     logger.debug(f"[Turn {game_state.turn}] Feedback received from engine: {game_state.feedback}")
+    global turn_planted
 
     # Select your decision here!
     my_player: Player = game_state.get_my_player()
@@ -254,23 +320,26 @@ def get_action_decision(game: Game) -> ActionDecision:
 
     logger.debug(f"Possible harvest locations={possible_harvest_locations}")
 
+    if my_player.money >= CropType.DUCHAM_FRUIT.get_seed_price() and game_state.tile_map.get_tile(pos.x,pos.y).type == TileType.GREEN_GROCER\
+            and my_player.money < 2500:
+        if my_player.money >= CropType.GOLDEN_CORN.get_seed_price():
+            decision = BuyDecision([CropType.GOLDEN_CORN],
+                               [min(int(my_player.money / CropType.GOLDEN_CORN.get_seed_price()), 5)])
+        else:
+            decision = BuyDecision([CropType.DUCHAM_FRUIT],
+                               [min(int(my_player.money / CropType.DUCHAM_FRUIT.get_seed_price()), 5)])
     # If we can harvest something, try to harvest it
-    if len(possible_harvest_locations) > 0:
+    elif len(possible_harvest_locations) > 0:
         decision = HarvestDecision(possible_harvest_locations)
     # If not but we have that seed, then try to plant it in a fertility band
     elif my_player.seed_inventory[crop] > 0 and \
             game_state.tile_map.get_tile(pos.x, pos.y).type != TileType.GREEN_GROCER and \
             game_state.tile_map.get_tile(pos.x, pos.y).type.value >= TileType.F_BAND_OUTER.value:
         logger.debug(f"Deciding to try to plant at position {pos}")
-        friendly_crops[pos.y][pos.x] = crop
         decision = PlantDecision([crop], [pos])
+        turn_planted = game_state.turn
     # If we don't have that seed, but we have the money to buy it, then move towards the
     # green grocer to buy it
-    elif my_player.money >= crop.get_seed_price() and \
-            game_state.tile_map.get_tile(pos.x, pos.y).type == TileType.GREEN_GROCER:
-        logger.debug(f"Buy 1 of {crop}")
-        decision = BuyDecision([crop], [1])
-    # If we can't do any of that, then just do nothing (move around some more)
     else:
         logger.debug(f"Couldn't find anything to do, waiting for move step")
         decision = DoNothingDecision()
@@ -283,7 +352,7 @@ def main():
     """
     Competitor TODO: choose an item and upgrade for your bot
     """
-    game = Game(ItemType.COFFEE_THERMOS, UpgradeType.SCYTHE)
+    game = Game(ItemType.COFFEE_THERMOS, UpgradeType.LONGER_LEGS)
 
     while True:
         try:
@@ -301,3 +370,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

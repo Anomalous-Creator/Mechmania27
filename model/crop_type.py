@@ -4,6 +4,7 @@ import os
 import configparser
 
 class CropType(Enum):
+    NONE = 0
     GRAPE = 1
     CORN = 2
     POTATO = 3
@@ -12,7 +13,6 @@ class CropType(Enum):
     QUADROTRITICALE = 6
     DUCHAM_FRUIT = 7
     GOLDEN_CORN = 8
-    NONE = 9
 
     def __init__(self, *args, **kwargs):
         with open(Path(os.path.dirname(os.path.dirname(__file__))) / "resources" / "mm27.properties") as f:

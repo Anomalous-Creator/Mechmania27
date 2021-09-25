@@ -151,7 +151,7 @@ def sort_tiles_by_harvest_value(game, player_pos_x, player_pos_y):
             else:
                 pass
 
-            if tiles[y][x].hasScarecrowEffect == True or near_opp or tiles[y][x].crop.growth_timer > 0:
+            if tiles[y][x].hasScarecrowEffect or near_opp or tiles[y][x].crop.growth_timer > 0:
                 val = 0
             else:
                 val = tiles[y][x].crop.value
@@ -200,10 +200,10 @@ def movement_clamp(max_movement, player_pos_x, player_pos_y, pos_move=[0, 0]):
         return pos_move[0], pos_move[1]
     elif abs(player_pos_y - pos_move[1]) < max_movement:
         if pos_move[1] == player_pos_y:
-            if pos_move[0] > player_pos_x:
-                pos_move[0] = player_pos_x + max_movement
+            if pos_move[1] > player_pos_y:
+                pos_move[1] = player_pos_y + max_movement
             else:
-                pos_move[0] = player_pos_x - max_movement
+                pos_move[1] = player_pos_y - max_movement
         elif pos_move[1] > player_pos_y:
             pos_move[1] = player_pos_y + max_movement - abs(player_pos_x - pos_move[0])
         else:
@@ -229,6 +229,23 @@ def is_valid_harvest_pos(harvest_rad, max_movement, player_pos_x, player_pos_y, 
         return False
 
 
+def is_valid_plant_tiles(game_state: GameState, name: str):
+    """
+    Returns all tiles for which player of input name can go to
+    :param game_state: GameState containing information for the game
+    :param name: Name of player to get
+    :return: List of positions that the player can harvest
+    """
+    my_player = game_util.get_player_from_name(game_state, name)
+    radius = my_player.plant_radius
+    res = []
+
+    for i in range(my_player.position.y - radius, my_player.position.y + radius + 1):
+        for j in range(my_player.position.x - radius, my_player.position.x + radius + 1):
+            pos = Position(j, i)
+            if game_util.distance(my_player.position, pos) <= my_player.plant_radius and game_util.valid_position(pos):
+                res.append(pos)
+    return res
 
 """
 TOP SECRET CURRENT PLAN(t)
@@ -271,14 +288,17 @@ def get_move_decision(game: Game) -> MoveDecision:
     if turn < 23:
         x, y = movement_clamp(my_player.max_movement, pos.x, pos.y, [15, 0])
         logger.debug("Moving towards green grocer")
+    # If not, move to lower good band
+    elif turn > 150:
+        x, y = movement_clamp(my_player.max_movement, pos.x, pos.y, [15, 0])
+    elif turn_planted + 5 >= game_state.turn:
+        x, y = pos.x, pos.y
     # Move toward green grocer if we have harvest, or no seeds
     elif (len(my_player.harvested_inventory)) > 0 or sum(my_player.seed_inventory.values()) == 0:
         x, y = movement_clamp(my_player.max_movement, pos.x, pos.y, [15, 0])
 
         logger.debug("Moving towards green grocer")
-    # If not, move to lower good band
-    elif turn_planted + 5 >= game_state.turn:
-        x, y = pos.x, pos.y
+
     else:
         x, y = movement_clamp(my_player.max_movement, pos.x, pos.y, [15, get_ideal_y(game_state)+1])
     decision = MoveDecision(Position(x, y))
@@ -311,32 +331,45 @@ def get_action_decision(game: Game) -> ActionDecision:
     crop = max(my_player.seed_inventory, key=my_player.seed_inventory.get) \
         if sum(my_player.seed_inventory.values()) > 0 else random.choice(list(CropType))
 
+    crops_sorted = []
+    for i in my_player.seed_inventory.keys():
+        if my_player.seed_inventory[i] > 0:
+            for j in range(my_player.seed_inventory[i]):
+                crops_sorted.append(i)
+
     # Get a list of possible harvest locations for our harvest radius
+    plant_radius = my_player.plant_radius
+    possible_plant_locations = []
     possible_harvest_locations = []
     harvest_radius = my_player.harvest_radius
     for harvest_pos in game_util.within_harvest_range(game_state, my_player.name):
         if game_state.tile_map.get_tile(harvest_pos.x, harvest_pos.y).crop.value > 0:
             possible_harvest_locations.append(harvest_pos)
-
+    for plant_pos in is_valid_plant_tiles(game_state, my_player.name):
+        possible_plant_locations.append(plant_pos)
     logger.debug(f"Possible harvest locations={possible_harvest_locations}")
-
+    logger.debug(f"Possible plant locations={possible_plant_locations}")
     if my_player.money >= CropType.DUCHAM_FRUIT.get_seed_price() and game_state.tile_map.get_tile(pos.x,pos.y).type == TileType.GREEN_GROCER\
             and my_player.money < 2500:
         if my_player.money >= CropType.GOLDEN_CORN.get_seed_price():
             decision = BuyDecision([CropType.GOLDEN_CORN],
-                               [min(int(my_player.money / CropType.GOLDEN_CORN.get_seed_price()), 5)])
-        else:
+                               [min(int(my_player.money / CropType.GOLDEN_CORN.get_seed_price()), len(my_player.seed_inventory))])
+        elif sum(my_player.seed_inventory.values()) < 5:
             decision = BuyDecision([CropType.DUCHAM_FRUIT],
-                               [min(int(my_player.money / CropType.DUCHAM_FRUIT.get_seed_price()), 5)])
+                               [min(int(my_player.money / CropType.DUCHAM_FRUIT.get_seed_price()), len(my_player.seed_inventory))])
+        else:
+            decision = DoNothingDecision()
     # If we can harvest something, try to harvest it
     elif len(possible_harvest_locations) > 0:
         decision = HarvestDecision(possible_harvest_locations)
     # If not but we have that seed, then try to plant it in a fertility band
-    elif my_player.seed_inventory[crop] > 0 and \
+    elif len(my_player.seed_inventory) > 0 and \
             game_state.tile_map.get_tile(pos.x, pos.y).type != TileType.GREEN_GROCER and \
-            game_state.tile_map.get_tile(pos.x, pos.y).type.value >= TileType.F_BAND_OUTER.value:
+            my_player.position.y == get_ideal_y(game_state)+1 and \
+            len(possible_plant_locations) > 0 and len(crops_sorted) > 0:
         logger.debug(f"Deciding to try to plant at position {pos}")
-        decision = PlantDecision([crop], [pos])
+        crops = [crop]
+        decision = PlantDecision(crops_sorted[0:min(len(crops_sorted), len(possible_plant_locations))], possible_plant_locations[0:len(crops_sorted)])
         turn_planted = game_state.turn
     # If we don't have that seed, but we have the money to buy it, then move towards the
     # green grocer to buy it

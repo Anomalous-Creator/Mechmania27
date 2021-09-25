@@ -18,10 +18,162 @@ from api.constants import Constants
 
 import random
 
+# "Get" global logger and constant
 logger = Logger()
 constants = Constants()
 
+# Global Variables
+# Global list of crops we or the opposition have planted at the y,x value
+# Both lists are a 50 x 30
+# They will be filled with "None" crops at the start of the game
+# Friendly will replace "None" crops with crops that we plan
+# Opposition will replace "None" crops with crops that we didn't plant
+# Neither lists will overlap, the opposing list will have "None" crops in the overlap
+friendly_crops = [[]]
+opposition_crops = [[]]
 
+#Check if two crop objects are equal by checking their type, growth_timer, and value
+def crop_equals(one, two):
+    if not one.type == two.type:
+        return False
+    if not one.growth_timer == two.growth_timer:
+        return False
+    if not one.value == two.value:
+        return False
+    #If made it this far, all variables must be equal so return true
+    return True
+
+#Populate the two global crop lists at the beginning of the game
+#All crops at the beginning will have crop.type == 9 (the value for no crop type)
+def populate_global_crop_lists(game_state):
+    # Iterate through all tiles
+    for x in range(game_state.tile_map.map_width):
+        for y in range(game_state.tile_map.map_height):
+            # Populate the crop lists with the intial crops
+            friendly_crops[y][x] = game_state.tile_map.get_tile(y, x).crop
+            opposition_crops[y][x] = game_state.tile_map.get_tile(y, x).crop
+
+
+# Check for and update opponent crop list
+# If crops have changed since last turn, and we didn't plant them then the crop must be an a opponents
+def check_for_opp_crops(game_state):
+    # Iterate through all tiles in map
+    for x in range(game_state.tile_map.map_width):
+        for y in range(game_state.tile_map.map_height):
+            # Check that the crop is not one of ours
+            if not (friendly_crops[y][x].type == game_state.tile_map.get_tile(y, x).crop.type):
+                # Check that the crop is not already updated
+                if not (opposition_crops[y][x].type == game_state.tile_map.get_tile(y, x).crop.type):
+                    opposition_crops[y][x] = game_state.tile_map.get_tile(y, x).crop
+
+
+#Update the global crop lists with crop growth
+def update_global_tile_lists(game_state):
+    for x in range(game_state.tile_map.map_width):
+        for y in range(game_state.tile_map.map_height):
+            #Check to update the friendly crop
+            if not friendly_crops[y][x].type == 9:
+                if not crop_equals(friendly_crops[y][x], game_state.tile_map.get_tile(y, x).crop):
+                    friendly_crops[y][x] = game_state.tile_map.get_tile(y, x).crop
+
+            #Check to update the opposition crop
+            if not opposition_crops[y][x].type == 9:
+                if not crop_equals(opposition_crops[y][x], game_state.tile_map.get_tile(y, x).crop):
+                    opposition_crops[y][x] = game_state.tile_map.get_tile(y, x).crop
+
+
+
+def get_tiles_by_crop(game_state, tiles, crops=[]):
+    out_tiles = [[]]
+    for x in range(game_state.tile_map.map_width):
+        for y in range(game_state.tile_map.map_height):
+            if tiles[y][x].crop.type in crops:
+                out_tiles[y][x] = tiles[y, x] \
+                    if game_state.tile_map.get_tile(x, y).crop.type \
+                       in crops else None
+    return out_tiles
+
+
+def get_tiles_with_effects(game_state, tiles, effects=[]):
+    out_tiles = [[]]
+    for x in range(game_state.tile_map.map_width):
+        for y in range(game_state.tile_map.map_height):
+            tile_effects = []
+            if tiles[y][x].rain_totem_effect is True:
+                effects.append('rain_totem')
+            if tiles[y][x].fertility_idol_effect is True:
+                effects.append('fertility_idol')
+            if tiles[y][x].rain_totem_effect is True:
+                effects.append('scarecrow')
+            for effect in effects:
+                out_tiles[y][x] = tiles[y][x] if effect in tile_effects else \
+                    None
+    return out_tiles
+
+
+# Returns sorted list of tiles in ascending order by time left for crop to grow
+def sort_tiles_by_time(game_state, tiles):
+    crops = {}
+    for x in range(game_state.tile_map.map_width):
+        for y in range(game_state.tile_map.map_height):
+            crops[(y, x)] = {'tile': tiles[y][x], 'time':
+                tiles[y][x].crop.growth_timer}
+    crops_time = sorted(crops.iteritems(), key=lambda x_y: x_y[1]['time'])
+    return crops_time
+
+
+# Determine optimal position to move to in 3 turns
+def sort_tiles_by_harvest_value(game, player_pos_y, player_pos_x):
+    out_tiles = [[]]
+    crops = {}
+    game_state = game.get_game_state()
+    tiles = game_state.tile_map
+    for x in range(game_state.tile_map.map_width):
+        for y in range(game_state.tile_map.map_height):
+            true_pos = x + y
+            near_opp = False
+            opp_offset = game_state.get_opponent_player.protection_radius
+
+            if abs(game_state.get_opponent_player.position.y + game_state.get_opponent_player.position.x - true_pos) <= opp_offset:
+                near_opp = True
+            else:
+                pass
+
+            if tiles.get_tile[y][x].scarecrowEffect == True or near_opp or tiles.get_tile[y][x].crop.growth_timer > 0:
+                val = 0
+            else:
+                val = tiles.get_tile[y][x].crop.value
+                if is_valid_movement_pos(Player.max_movement, player_pos_y, player_pos_x, y, x):
+                    pass
+                else:
+                    val *= 0.5
+                if tiles.get_tile[y][x].fertility_idol_effect:
+                    val *= 2
+                else:
+                    pass
+                crops[(y, x)] = {'tile': tiles.get_tile[y][x], 'value': val}
+
+            crops_value = sorted(crops.iteritems(), key=lambda n: n[1]['value'],reverse=True)
+            return crops_value
+
+def distance_to(player_pos_y, player_pos_x, pos_move=(0, 0)):
+    true_pos = str((player_pos_x + player_pos_y) - (pos_move[0] + pos_move[1]))
+    if true_pos.contains("-"):
+        true_pos.strip("-")
+    return int(true_pos)
+
+
+#Determine if the pos you want to move to from player pos is valid
+def is_valid_movement_pos(max_movement, player_pos_y, player_pos_x, pos_move=(0, 0)):
+    true_pos = distance_to(player_pos_y, player_pos_x, pos_move)
+    if true_pos <= max_movement:
+        return True
+    else:
+        return False
+
+def is_valid_harvest_pos(harvest_rad,max_movement, player_pos_y, player_pos_x, pos_move=(0, 0)):
+    if distance_to(player_pos_y, player_pos_x, pos_move)<max_movement:
+    elif pos_move[0]
 def get_move_decision(game: Game) -> MoveDecision:
     """
     Returns a move decision for the turn given the current game state.
@@ -55,6 +207,16 @@ def get_move_decision(game: Game) -> MoveDecision:
         pos = random.choice(game_util.within_move_range(game_state, my_player.name))
         logger.debug("Moving randomly")
         decision = MoveDecision(pos)
+    # Move towards oppositions crops
+    if len(opposition_crops) > 0:
+        xPos = opposition_crops[0][0]
+        yPos = opposition_crops[0]
+        while not is_valid_movement_pos(player_pos_y= pos.y, player_pos_x= pos.x, pos_move= (xPos, yPos)):
+            xPos =
+
+
+    if (len(my_player.harvest_inventory) + 8) > my_player.carring_capacity:
+        decision = MoveDecision(Position(15, 0))
 
     logger.debug(f"[Turn {game_state.turn}] Sending MoveDecision: {decision}")
     return decision
@@ -100,11 +262,12 @@ def get_action_decision(game: Game) -> ActionDecision:
             game_state.tile_map.get_tile(pos.x, pos.y).type != TileType.GREEN_GROCER and \
             game_state.tile_map.get_tile(pos.x, pos.y).type.value >= TileType.F_BAND_OUTER.value:
         logger.debug(f"Deciding to try to plant at position {pos}")
+        friendly_crops[pos.y][pos.x] = crop
         decision = PlantDecision([crop], [pos])
     # If we don't have that seed, but we have the money to buy it, then move towards the
     # green grocer to buy it
     elif my_player.money >= crop.get_seed_price() and \
-        game_state.tile_map.get_tile(pos.x, pos.y).type == TileType.GREEN_GROCER:
+            game_state.tile_map.get_tile(pos.x, pos.y).type == TileType.GREEN_GROCER:
         logger.debug(f"Buy 1 of {crop}")
         decision = BuyDecision([crop], [1])
     # If we can't do any of that, then just do nothing (move around some more)
@@ -122,7 +285,7 @@ def main():
     """
     game = Game(ItemType.COFFEE_THERMOS, UpgradeType.SCYTHE)
 
-    while (True):
+    while True:
         try:
             game.update_game()
         except IOError:
